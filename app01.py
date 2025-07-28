@@ -28,7 +28,39 @@ import platform
 import glob
 
 st.set_page_config(page_title="디지털 헬스케어 뉴스 요약", layout="wide")
-st.title("📰 디지털 헬스케어 뉴스 분석 보고서")
+
+# 시스템 체크 및 초기화
+try:
+    st.title("📰 디지털 헬스케어 뉴스 분석 보고서")
+    
+    # 시스템 정보 표시 (디버깅용)
+    with st.expander("🔧 시스템 정보", expanded=False):
+        st.write(f"Python 버전: {platform.python_version()}")
+        st.write(f"운영체제: {platform.system()} {platform.release()}")
+        st.write(f"Streamlit 버전: {st.__version__}")
+        
+        # 주요 라이브러리 버전 체크
+        try:
+            import pandas as pd
+            st.write(f"Pandas 버전: {pd.__version__}")
+        except:
+            st.error("Pandas 라이브러리 오류")
+            
+        try:
+            import matplotlib
+            st.write(f"Matplotlib 버전: {matplotlib.__version__}")
+        except:
+            st.error("Matplotlib 라이브러리 오류")
+            
+        try:
+            from wordcloud import WordCloud
+            st.write("WordCloud: ✅ 정상")
+        except:
+            st.error("WordCloud 라이브러리 오류")
+
+except Exception as e:
+    st.error(f"앱 초기화 오류: {e}")
+    st.stop()
 
 # 캐시 클리어 버튼 (사이드바에 추가)
 with st.sidebar:
@@ -38,7 +70,13 @@ with st.sidebar:
         st.success("✅ 데이터가 새로고침되었습니다!")
         st.rerun()
 
-kw_model = KeyBERT()
+# KeyBERT 모델 초기화 (안전한 방식)
+try:
+    kw_model = KeyBERT()
+    st.success("✅ KeyBERT 모델 로드 완료")
+except Exception as e:
+    st.error(f"❌ KeyBERT 모델 로드 실패: {e}")
+    kw_model = None
 
 # 기존 CSV 파일 로드
 @st.cache_data
@@ -106,13 +144,27 @@ def summarize_text(text, ratio=0.3):
     except:
         return text[:200] + '...' if len(text) > 200 else text
 
-# 키워드
+# 키워드 추출 (안전한 방식)
 def extract_keywords(text, top_n=5):
     try:
+        if kw_model is None:
+            # KeyBERT가 없을 경우 간단한 키워드 추출
+            words = re.findall(r'\b[가-힣]{2,}\b', text)  # 한글 단어만 추출
+            from collections import Counter
+            word_freq = Counter(words)
+            return [word for word, _ in word_freq.most_common(top_n)]
+        
         keywords = kw_model.extract_keywords(text, top_n=top_n, stop_words="english")
         return [kw[0] for kw in keywords]
-    except:
-        return []
+    except Exception as e:
+        # 오류 발생 시 간단한 키워드 추출
+        try:
+            words = re.findall(r'\b[가-힣]{2,}\b', text)
+            from collections import Counter
+            word_freq = Counter(words)
+            return [word for word, _ in word_freq.most_common(top_n)]
+        except:
+            return []
 
 # TextRank 요약 (그래프 기반)
 def textrank_summarize(text, ratio=0.4):
@@ -622,9 +674,14 @@ if not existing_df.empty:
                 wordcloud = create_wordcloud(existing_df['keywords'])
             
             if wordcloud:
-                # matplotlib 한글 폰트 설정
-                plt.rcParams['font.family'] = ['Malgun Gothic', 'DejaVu Sans']
-                plt.rcParams['axes.unicode_minus'] = False
+                # matplotlib 한글 폰트 설정 (안전한 방식)
+                try:
+                    plt.rcParams['font.family'] = ['Malgun Gothic', 'DejaVu Sans', 'sans-serif']
+                    plt.rcParams['axes.unicode_minus'] = False
+                except Exception as e:
+                    st.warning(f"폰트 설정 경고: {e}")
+                    # 기본 설정으로 fallback
+                    plt.rcParams['font.family'] = ['sans-serif']
                 
                 # 워드클라우드 표시
                 fig, ax = plt.subplots(figsize=(12, 6))
