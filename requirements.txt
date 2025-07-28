@@ -6,3 +6,6 @@ sentence-transformers
 scikit-learn
 numpy
 matplotlib
+streamlit
+plotly
+wordcloud
