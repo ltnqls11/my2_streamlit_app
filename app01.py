@@ -70,6 +70,16 @@ with st.sidebar:
         st.success("✅ 데이터가 새로고침되었습니다!")
         st.rerun()
 
+# 한글 폰트 초기 설정
+try:
+    font_path = setup_korean_font()
+    if font_path:
+        st.success(f"✅ 한글 폰트 설정 완료: {os.path.basename(font_path)}")
+    else:
+        st.warning("⚠️ 한글 폰트 설정 실패 - 기본 폰트 사용")
+except Exception as e:
+    st.error(f"❌ 폰트 설정 오류: {e}")
+
 # KeyBERT 모델 초기화 (안전한 방식)
 try:
     kw_model = KeyBERT()
@@ -281,135 +291,137 @@ def kobart_style_summarize(text, ratio=0.2):
     except:
         return text[:100] + '...' if len(text) > 100 else text
 
-# 한글 폰트 경로 찾기 (강력 버전)
-def get_korean_font_path():
-    
-    system = platform.system()
-    
-    # Windows 폰트 경로들 (우선순위 순)
-    if system == "Windows":
-        # 1. 기본 Windows 폰트들
-        font_paths = [
-            "C:/Windows/Fonts/malgun.ttf",      # 맑은 고딕
-            "C:/Windows/Fonts/malgunbd.ttf",    # 맑은 고딕 Bold
-            "C:/Windows/Fonts/gulim.ttc",       # 굴림
-            "C:/Windows/Fonts/batang.ttc",      # 바탕
-            "C:/Windows/Fonts/dotum.ttc",       # 돋움
-            "C:/Windows/Fonts/gungsuh.ttc",     # 궁서
-        ]
-        
-        # 2. 나눔 폰트들
-        nanum_fonts = [
-            "C:/Windows/Fonts/NanumGothic.ttf",
-            "C:/Windows/Fonts/NanumBarunGothic.ttf",
-            "C:/Windows/Fonts/NanumSquare.ttf",
-        ]
-        font_paths.extend(nanum_fonts)
-        
-        # 3. 추가 한글 폰트 검색
-        additional_patterns = [
-            "C:/Windows/Fonts/*gothic*.ttf",
-            "C:/Windows/Fonts/*Gothic*.ttf",
-            "C:/Windows/Fonts/*한글*.ttf",
-            "C:/Windows/Fonts/*Korean*.ttf",
-        ]
-        
-        for pattern in additional_patterns:
-            font_paths.extend(glob.glob(pattern))
-        
-    # macOS 폰트 경로들
-    elif system == "Darwin":
-        font_paths = [
-            "/System/Library/Fonts/AppleSDGothicNeo.ttc",
-            "/Library/Fonts/NanumGothic.ttf",
-            "/System/Library/Fonts/Helvetica.ttc"
-        ]
-    # Linux 폰트 경로들
-    else:
-        font_paths = [
-            "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-        ]
-    
-    # 존재하는 첫 번째 폰트 반환
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            print(f"한글 폰트 발견: {font_path}")  # 디버깅용
-            return font_path
-    
-    # 폰트를 찾지 못한 경우 경고
-    print("경고: 한글 폰트를 찾을 수 없습니다. 기본 폰트를 사용합니다.")
-    return None
-
-# 워드클라우드 생성 (한글 지원 강화)
-def create_wordcloud(text_data):
+# Windows 한글 폰트 강제 다운로드 및 설정
+def setup_korean_font():
+    """한글 폰트를 확실하게 설정하는 함수"""
     try:
-        # 모든 키워드 합치기
+        import matplotlib.font_manager as fm
+        
+        # Windows 시스템 폰트 경로들
+        windows_fonts = [
+            r"C:\Windows\Fonts\malgun.ttf",
+            r"C:\Windows\Fonts\gulim.ttc", 
+            r"C:\Windows\Fonts\batang.ttc",
+            r"C:\Windows\Fonts\dotum.ttc"
+        ]
+        
+        # 존재하는 폰트 찾기
+        korean_font = None
+        for font_path in windows_fonts:
+            if os.path.exists(font_path):
+                korean_font = font_path
+                break
+        
+        if korean_font:
+            # matplotlib에 폰트 등록
+            font_prop = fm.FontProperties(fname=korean_font)
+            plt.rcParams['font.family'] = font_prop.get_name()
+            plt.rcParams['axes.unicode_minus'] = False
+            return korean_font
+        else:
+            # 폰트가 없으면 나눔고딕 다운로드 시도
+            return download_nanum_font()
+            
+    except Exception as e:
+        st.error(f"폰트 설정 오류: {e}")
+        return None
+
+def download_nanum_font():
+    """나눔고딕 폰트 다운로드"""
+    try:
+        import urllib.request
+        
+        # 나눔고딕 다운로드 URL
+        font_url = "https://github.com/naver/nanumfont/raw/master/fonts/NanumGothic.ttf"
+        font_path = "NanumGothic.ttf"
+        
+        if not os.path.exists(font_path):
+            st.info("한글 폰트를 다운로드하는 중...")
+            urllib.request.urlretrieve(font_url, font_path)
+            st.success("나눔고딕 폰트 다운로드 완료!")
+        
+        return font_path
+        
+    except Exception as e:
+        st.error(f"폰트 다운로드 실패: {e}")
+        return None
+
+def get_korean_font_path():
+    """한글 폰트 경로 반환"""
+    return setup_korean_font()
+
+# 한글 워드클라우드 생성 (완전 개선 버전)
+def create_wordcloud(text_data):
+    """한글을 완벽하게 지원하는 워드클라우드 생성"""
+    try:
+        # 1. 키워드 데이터 전처리
         all_keywords = []
         for keywords_str in text_data:
-            if pd.notna(keywords_str):
+            if pd.notna(keywords_str) and str(keywords_str).strip():
                 keywords = [k.strip() for k in str(keywords_str).split(',')]
-                # 빈 키워드 제거 및 한글만 포함된 키워드 필터링
-                keywords = [k for k in keywords if k and len(k) > 1]
-                all_keywords.extend(keywords)
+                # 한글 키워드만 필터링 (2글자 이상)
+                korean_keywords = []
+                for k in keywords:
+                    if k and len(k) >= 2 and any('\uac00' <= char <= '\ud7a3' for char in k):
+                        korean_keywords.append(k)
+                all_keywords.extend(korean_keywords)
         
         if not all_keywords:
-            st.warning("워드클라우드를 생성할 키워드가 없습니다.")
+            st.warning("한글 키워드가 없습니다.")
             return None
         
-        # 키워드 빈도 계산
+        # 2. 키워드 빈도 계산 및 필터링
         keyword_freq = Counter(all_keywords)
-        
-        # 최소 빈도 필터링 (너무 적게 나타나는 키워드 제거)
-        min_freq = max(1, len(all_keywords) // 50)  # 전체의 2% 이상
-        keyword_freq = {k: v for k, v in keyword_freq.items() if v >= min_freq}
+        # 최소 2번 이상 나타나는 키워드만 사용
+        keyword_freq = {k: v for k, v in keyword_freq.items() if v >= 2}
         
         if not keyword_freq:
-            st.warning("충분한 빈도의 키워드가 없습니다.")
-            return None
+            # 빈도가 낮아도 모든 키워드 사용
+            keyword_freq = Counter(all_keywords)
         
-        # 한글 폰트 경로 가져오기
+        # 3. 한글 폰트 설정
         font_path = get_korean_font_path()
         
-        # 워드클라우드 생성 파라미터
+        # 4. 워드클라우드 파라미터 (한글 최적화)
         wordcloud_params = {
-            'width': 1000, 
-            'height': 500, 
+            'width': 1200,
+            'height': 600,
             'background_color': 'white',
-            'max_words': 100,
-            'colormap': 'Set3',  # 더 다양한 색상
-            'relative_scaling': 0.6,
-            'min_font_size': 12,
-            'max_font_size': 80,
-            'prefer_horizontal': 0.7,  # 가로 텍스트 선호
-            'collocations': False,  # 단어 조합 방지
+            'max_words': 50,  # 키워드 수 줄여서 가독성 향상
+            'colormap': 'tab10',
+            'relative_scaling': 0.5,
+            'min_font_size': 15,  # 최소 폰트 크기 증가
+            'max_font_size': 100,
+            'prefer_horizontal': 0.8,  # 가로 텍스트 더 선호
+            'collocations': False,
+            'random_state': 42,  # 일관된 결과
         }
         
-        # 한글 폰트 설정 (필수)
-        if font_path:
+        # 5. 폰트 적용
+        if font_path and os.path.exists(font_path):
             wordcloud_params['font_path'] = font_path
-            st.success(f"한글 폰트 적용됨: {os.path.basename(font_path)}")
+            st.success(f"✅ 한글 폰트 적용: {os.path.basename(font_path)}")
         else:
-            # 폰트가 없어도 시도해보기
-            st.warning("한글 폰트를 찾을 수 없어 기본 폰트를 사용합니다. 한글이 깨질 수 있습니다.")
+            st.error("❌ 한글 폰트를 찾을 수 없습니다.")
+            # 기본 폰트로도 시도
+            pass
         
-        # 워드클라우드 생성
+        # 6. 워드클라우드 생성
         wordcloud = WordCloud(**wordcloud_params)
-        
-        # 빈도 데이터로 워드클라우드 생성
         wordcloud.generate_from_frequencies(keyword_freq)
         
-        # 생성 성공 메시지
-        st.info(f"워드클라우드 생성 완료: {len(keyword_freq)}개 키워드 사용")
+        st.info(f"📊 워드클라우드 생성 완료: {len(keyword_freq)}개 키워드")
         
         return wordcloud
         
     except Exception as e:
-        st.error(f"워드클라우드 생성 오류: {str(e)}")
+        st.error(f"❌ 워드클라우드 생성 실패: {str(e)}")
         
-        # 상세 오류 정보 표시
-        import traceback
-        with st.expander("상세 오류 정보"):
+        # 디버깅 정보
+        with st.expander("🔧 디버깅 정보"):
+            st.write("키워드 샘플:", all_keywords[:10] if 'all_keywords' in locals() else "없음")
+            st.write("폰트 경로:", font_path if 'font_path' in locals() else "없음")
+            import traceback
             st.code(traceback.format_exc())
         
         return None
@@ -674,24 +686,56 @@ if not existing_df.empty:
                 wordcloud = create_wordcloud(existing_df['keywords'])
             
             if wordcloud:
-                # matplotlib 한글 폰트 설정 (안전한 방식)
+                # matplotlib 한글 폰트 강제 설정
                 try:
-                    plt.rcParams['font.family'] = ['Malgun Gothic', 'DejaVu Sans', 'sans-serif']
+                    # 한글 폰트 재설정
+                    font_path = get_korean_font_path()
+                    if font_path:
+                        import matplotlib.font_manager as fm
+                        font_prop = fm.FontProperties(fname=font_path)
+                        plt.rcParams['font.family'] = [font_prop.get_name()]
+                    else:
+                        # Windows 기본 한글 폰트들 시도
+                        plt.rcParams['font.family'] = ['Malgun Gothic', 'Gulim', 'Batang', 'Dotum']
+                    
                     plt.rcParams['axes.unicode_minus'] = False
+                    
                 except Exception as e:
-                    st.warning(f"폰트 설정 경고: {e}")
-                    # 기본 설정으로 fallback
-                    plt.rcParams['font.family'] = ['sans-serif']
+                    st.warning(f"matplotlib 폰트 설정 실패: {e}")
                 
-                # 워드클라우드 표시
-                fig, ax = plt.subplots(figsize=(12, 6))
+                # 워드클라우드 표시 (개선된 버전)
+                fig, ax = plt.subplots(figsize=(15, 8))
                 ax.imshow(wordcloud, interpolation='bilinear')
                 ax.axis('off')
-                ax.set_title('키워드 워드클라우드', fontsize=16, pad=20)
                 
-                # 고해상도로 표시
-                st.pyplot(fig, dpi=150)
+                # 제목을 한글로 표시 (폰트 테스트)
+                try:
+                    ax.set_title('🌟 키워드 워드클라우드 🌟', fontsize=20, pad=30, weight='bold')
+                except:
+                    ax.set_title('Keyword WordCloud', fontsize=20, pad=30, weight='bold')
+                
+                # 최고 해상도로 표시
+                st.pyplot(fig, dpi=200, use_container_width=True)
                 plt.close(fig)  # 메모리 정리
+                
+                # 워드클라우드 이미지 다운로드 옵션
+                try:
+                    import io
+                    img_buffer = io.BytesIO()
+                    fig, ax = plt.subplots(figsize=(15, 8))
+                    ax.imshow(wordcloud, interpolation='bilinear')
+                    ax.axis('off')
+                    plt.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight')
+                    plt.close(fig)
+                    
+                    st.download_button(
+                        label="📥 워드클라우드 이미지 다운로드",
+                        data=img_buffer.getvalue(),
+                        file_name=f"wordcloud_{time.strftime('%Y%m%d_%H%M%S')}.png",
+                        mime="image/png"
+                    )
+                except Exception as e:
+                    st.warning(f"다운로드 기능 오류: {e}")
                 
                 # 키워드 빈도 차트
                 st.subheader("📊 키워드 빈도 분석")
