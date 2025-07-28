@@ -23,6 +23,9 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
 import io
+import os
+import platform
+import glob
 
 st.set_page_config(page_title="디지털 헬스케어 뉴스 요약", layout="wide")
 st.title("📰 디지털 헬스케어 뉴스 분석 보고서")
@@ -228,9 +231,6 @@ def kobart_style_summarize(text, ratio=0.2):
 
 # 한글 폰트 경로 찾기 (강력 버전)
 def get_korean_font_path():
-    import platform
-    import os
-    import glob
     
     system = platform.system()
     
