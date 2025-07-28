@@ -226,21 +226,45 @@ def kobart_style_summarize(text, ratio=0.2):
     except:
         return text[:100] + '...' if len(text) > 100 else text
 
-# 한글 폰트 경로 찾기
+# 한글 폰트 경로 찾기 (강력 버전)
 def get_korean_font_path():
     import platform
     import os
+    import glob
     
     system = platform.system()
     
-    # Windows 폰트 경로들
+    # Windows 폰트 경로들 (우선순위 순)
     if system == "Windows":
+        # 1. 기본 Windows 폰트들
         font_paths = [
-            "C:/Windows/Fonts/malgun.ttf",  # 맑은 고딕
-            "C:/Windows/Fonts/gulim.ttc",   # 굴림
-            "C:/Windows/Fonts/batang.ttc",  # 바탕
-            "C:/Windows/Fonts/NanumGothic.ttf",  # 나눔고딕
+            "C:/Windows/Fonts/malgun.ttf",      # 맑은 고딕
+            "C:/Windows/Fonts/malgunbd.ttf",    # 맑은 고딕 Bold
+            "C:/Windows/Fonts/gulim.ttc",       # 굴림
+            "C:/Windows/Fonts/batang.ttc",      # 바탕
+            "C:/Windows/Fonts/dotum.ttc",       # 돋움
+            "C:/Windows/Fonts/gungsuh.ttc",     # 궁서
         ]
+        
+        # 2. 나눔 폰트들
+        nanum_fonts = [
+            "C:/Windows/Fonts/NanumGothic.ttf",
+            "C:/Windows/Fonts/NanumBarunGothic.ttf",
+            "C:/Windows/Fonts/NanumSquare.ttf",
+        ]
+        font_paths.extend(nanum_fonts)
+        
+        # 3. 추가 한글 폰트 검색
+        additional_patterns = [
+            "C:/Windows/Fonts/*gothic*.ttf",
+            "C:/Windows/Fonts/*Gothic*.ttf",
+            "C:/Windows/Fonts/*한글*.ttf",
+            "C:/Windows/Fonts/*Korean*.ttf",
+        ]
+        
+        for pattern in additional_patterns:
+            font_paths.extend(glob.glob(pattern))
+        
     # macOS 폰트 경로들
     elif system == "Darwin":
         font_paths = [
@@ -258,11 +282,14 @@ def get_korean_font_path():
     # 존재하는 첫 번째 폰트 반환
     for font_path in font_paths:
         if os.path.exists(font_path):
+            print(f"한글 폰트 발견: {font_path}")  # 디버깅용
             return font_path
     
+    # 폰트를 찾지 못한 경우 경고
+    print("경고: 한글 폰트를 찾을 수 없습니다. 기본 폰트를 사용합니다.")
     return None
 
-# 워드클라우드 생성
+# 워드클라우드 생성 (한글 지원 강화)
 def create_wordcloud(text_data):
     try:
         # 모든 키워드 합치기
@@ -270,37 +297,69 @@ def create_wordcloud(text_data):
         for keywords_str in text_data:
             if pd.notna(keywords_str):
                 keywords = [k.strip() for k in str(keywords_str).split(',')]
+                # 빈 키워드 제거 및 한글만 포함된 키워드 필터링
+                keywords = [k for k in keywords if k and len(k) > 1]
                 all_keywords.extend(keywords)
         
         if not all_keywords:
+            st.warning("워드클라우드를 생성할 키워드가 없습니다.")
             return None
         
         # 키워드 빈도 계산
         keyword_freq = Counter(all_keywords)
         
+        # 최소 빈도 필터링 (너무 적게 나타나는 키워드 제거)
+        min_freq = max(1, len(all_keywords) // 50)  # 전체의 2% 이상
+        keyword_freq = {k: v for k, v in keyword_freq.items() if v >= min_freq}
+        
+        if not keyword_freq:
+            st.warning("충분한 빈도의 키워드가 없습니다.")
+            return None
+        
         # 한글 폰트 경로 가져오기
         font_path = get_korean_font_path()
         
-        # 워드클라우드 생성
+        # 워드클라우드 생성 파라미터
         wordcloud_params = {
-            'width': 800, 
-            'height': 400, 
+            'width': 1000, 
+            'height': 500, 
             'background_color': 'white',
             'max_words': 100,
-            'colormap': 'viridis',
-            'relative_scaling': 0.5,
-            'min_font_size': 10
+            'colormap': 'Set3',  # 더 다양한 색상
+            'relative_scaling': 0.6,
+            'min_font_size': 12,
+            'max_font_size': 80,
+            'prefer_horizontal': 0.7,  # 가로 텍스트 선호
+            'collocations': False,  # 단어 조합 방지
         }
         
-        # 한글 폰트가 있으면 설정
+        # 한글 폰트 설정 (필수)
         if font_path:
             wordcloud_params['font_path'] = font_path
+            st.success(f"한글 폰트 적용됨: {os.path.basename(font_path)}")
+        else:
+            # 폰트가 없어도 시도해보기
+            st.warning("한글 폰트를 찾을 수 없어 기본 폰트를 사용합니다. 한글이 깨질 수 있습니다.")
         
-        wordcloud = WordCloud(**wordcloud_params).generate_from_frequencies(keyword_freq)
+        # 워드클라우드 생성
+        wordcloud = WordCloud(**wordcloud_params)
+        
+        # 빈도 데이터로 워드클라우드 생성
+        wordcloud.generate_from_frequencies(keyword_freq)
+        
+        # 생성 성공 메시지
+        st.info(f"워드클라우드 생성 완료: {len(keyword_freq)}개 키워드 사용")
         
         return wordcloud
+        
     except Exception as e:
-        st.error(f"워드클라우드 생성 오류: {e}")
+        st.error(f"워드클라우드 생성 오류: {str(e)}")
+        
+        # 상세 오류 정보 표시
+        import traceback
+        with st.expander("상세 오류 정보"):
+            st.code(traceback.format_exc())
+        
         return None
 
 # 링크를 하이퍼링크로 변환하는 함수
@@ -546,36 +605,95 @@ if not existing_df.empty:
     
     with tab2:
         st.subheader("☁️ 키워드 워드클라우드")
+        
+        # 폰트 상태 확인 버튼
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            if st.button("🔍 폰트 상태 확인"):
+                font_path = get_korean_font_path()
+                if font_path:
+                    st.success(f"✅ 한글 폰트 발견: {os.path.basename(font_path)}")
+                else:
+                    st.error("❌ 한글 폰트를 찾을 수 없습니다")
+        
         if 'keywords' in existing_df.columns:
-            wordcloud = create_wordcloud(existing_df['keywords'])
+            # 워드클라우드 생성 진행 상황 표시
+            with st.spinner("워드클라우드 생성 중..."):
+                wordcloud = create_wordcloud(existing_df['keywords'])
+            
             if wordcloud:
-                fig, ax = plt.subplots(figsize=(10, 5))
+                # matplotlib 한글 폰트 설정
+                plt.rcParams['font.family'] = ['Malgun Gothic', 'DejaVu Sans']
+                plt.rcParams['axes.unicode_minus'] = False
+                
+                # 워드클라우드 표시
+                fig, ax = plt.subplots(figsize=(12, 6))
                 ax.imshow(wordcloud, interpolation='bilinear')
                 ax.axis('off')
-                st.pyplot(fig)
+                ax.set_title('키워드 워드클라우드', fontsize=16, pad=20)
+                
+                # 고해상도로 표시
+                st.pyplot(fig, dpi=150)
+                plt.close(fig)  # 메모리 정리
                 
                 # 키워드 빈도 차트
+                st.subheader("📊 키워드 빈도 분석")
                 all_keywords = []
                 for keywords_str in existing_df['keywords']:
                     if pd.notna(keywords_str):
                         keywords = [k.strip() for k in str(keywords_str).split(',')]
+                        keywords = [k for k in keywords if k and len(k) > 1]  # 빈 키워드 제거
                         all_keywords.extend(keywords)
                 
                 if all_keywords:
                     keyword_freq = Counter(all_keywords)
-                    top_keywords = dict(keyword_freq.most_common(10))
+                    top_keywords = dict(keyword_freq.most_common(15))  # 상위 15개로 증가
                     
-                    fig_bar = px.bar(
-                        x=list(top_keywords.values()),
-                        y=list(top_keywords.keys()),
-                        orientation='h',
-                        title="상위 10개 키워드 빈도",
-                        labels={'x': '빈도', 'y': '키워드'}
-                    )
-                    fig_bar.update_layout(height=400)
-                    st.plotly_chart(fig_bar, use_container_width=True)
+                    # 한글 키워드만 필터링
+                    korean_keywords = {}
+                    for k, v in top_keywords.items():
+                        if any('\uac00' <= char <= '\ud7a3' for char in k):  # 한글 포함 확인
+                            korean_keywords[k] = v
+                    
+                    if korean_keywords:
+                        fig_bar = px.bar(
+                            x=list(korean_keywords.values()),
+                            y=list(korean_keywords.keys()),
+                            orientation='h',
+                            title="상위 키워드 빈도 (한글)",
+                            labels={'x': '빈도', 'y': '키워드'},
+                            color=list(korean_keywords.values()),
+                            color_continuous_scale='viridis'
+                        )
+                        fig_bar.update_layout(
+                            height=500,
+                            font=dict(size=12),
+                            title_font_size=16
+                        )
+                        st.plotly_chart(fig_bar, use_container_width=True)
+                        
+                        # 키워드 통계 정보
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("총 키워드 수", len(all_keywords))
+                        with col2:
+                            st.metric("고유 키워드 수", len(keyword_freq))
+                        with col3:
+                            st.metric("평균 빈도", f"{sum(keyword_freq.values()) / len(keyword_freq):.1f}")
+                    else:
+                        st.warning("한글 키워드가 없습니다.")
+                else:
+                    st.warning("키워드 데이터가 없습니다.")
             else:
-                st.warning("워드클라우드를 생성할 키워드가 없습니다.")
+                st.error("워드클라우드 생성에 실패했습니다.")
+                
+                # 대안 제시
+                st.info("💡 해결 방법:")
+                st.markdown("""
+                1. **한글 폰트 설치 확인**: Windows 설정 > 시간 및 언어 > 언어에서 한국어 언어팩 설치
+                2. **폰트 파일 확인**: C:/Windows/Fonts/ 폴더에 malgun.ttf 파일 존재 여부 확인
+                3. **권한 문제**: 관리자 권한으로 실행 시도
+                """)
         else:
             st.warning("키워드 데이터가 없습니다.")
     
